@@ -11,141 +11,159 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;display:flex;flex-direction:column;
-       padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-  header{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
-  h1{font-size:17px;margin:0;flex:1}
-  .st{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
-  .dot.live{background:#dc2626;animation:p 1.2s infinite}@keyframes p{50%{opacity:.3}}
-  button{font:inherit;font-weight:600;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px}
-  #he{flex:3;overflow-y:auto;padding:14px 16px;font-size:22px;line-height:1.6}
-  #en{flex:2;overflow-y:auto;padding:12px 16px;direction:ltr;text-align:left;font-size:15px;line-height:1.5;color:var(--muted);border-top:1px solid var(--line)}
-  .seg{margin:0 0 10px}
-  .interim{font-style:italic;opacity:.7}
-  .new{background:var(--soft);border-radius:6px}
-  .lbl{font-size:11px;letter-spacing:.08em;color:var(--muted);padding:8px 16px 0}
-  #mic{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:76px;height:76px;border-radius:50%;
-       background:var(--accent);color:#fff;border:none;font-size:32px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
-  #mic.live{background:#dc2626}
-  #msg{padding:8px 16px;font-size:14px;color:var(--accent)}
-  .spacer{height:110px}
+       padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+  header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  h1{font-size:16px;margin:0;flex:1}
+  button{font:inherit;font-weight:600;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 12px;font-size:14px}
+  #msg{padding:10px 14px;font-size:15px;background:var(--soft);color:var(--ink);border-bottom:1px solid var(--line)}
+  .lbl{font-size:12px;letter-spacing:.06em;color:var(--muted);padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center}
+  .pane{flex:1;overflow-y:auto;padding:4px 14px 12px;min-height:0}
+  #en{direction:ltr;text-align:left;font-size:18px;line-height:1.55}
+  #he{font-size:20px;line-height:1.6;border-top:1px solid var(--line)}
+  .seg{margin:0 0 8px}
+  .interim{color:var(--accent)}
+  .wait{color:var(--muted)}
+  .empty{color:var(--muted);font-size:15px;direction:rtl;text-align:right}
+  footer{display:flex;align-items:center;gap:12px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
+  #mic{width:64px;height:64px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:28px;flex:none;padding:0}
+  #mic.live{background:#dc2626;animation:p 1.4s infinite}@keyframes p{50%{opacity:.6}}
+  #stx{flex:1;font-size:14px;color:var(--muted);line-height:1.4}
+  #stx b{color:var(--ink)}
+  label{font-size:13px;display:flex;align-items:center;gap:4px;color:var(--muted)}
 </style>
 </head>
 <body>
 <header>
   <h1>English → עברית</h1>
-  <span class="st"><span class="dot" id="dot"></span><span id="stx">מוכן</span></span>
+  <button id="trNow">תרגם עכשיו</button>
   <button id="copy">העתק</button>
   <button id="clr">נקה</button>
 </header>
 <div id="msg" hidden></div>
-<div class="lbl">עברית</div>
-<div id="he"></div>
-<div class="lbl" style="direction:ltr;text-align:left">ENGLISH</div>
-<div id="en"><div class="spacer"></div></div>
-<button id="mic" aria-label="מיקרופון">🎙</button>
+
+<div class="lbl"><span style="direction:ltr">ENGLISH · מה שנשמע</span></div>
+<div class="pane" id="en"><p class="empty">לחץ על המיקרופון למטה. הטקסט באנגלית יופיע כאן תוך כדי.</p></div>
+
+<div class="lbl"><span>עברית · תרגום</span><label><input type="checkbox" id="auto" checked> תרגום אוטומטי</label></div>
+<div class="pane" id="he"></div>
+
+<footer>
+  <button id="mic" aria-label="מיקרופון">🎙</button>
+  <div id="stx">מוכן. לחץ על המיקרופון כדי להתחיל.</div>
+</footer>
 
 <script>
 const $=id=>document.getElementById(id);
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec=null, on=false, interimEl=null;
-const segs=[]; const queue=[]; let busy=false;
+let rec=null, on=false, interimEl=null, results=0, sessionText="";
+const segs=[];               // {en, he, enEl}
+let translatedUpTo=0, translating=false, trTimer=null;
 
 function msg(t){$("msg").hidden=!t;$("msg").textContent=t||""}
-function status(t,live){$("stx").textContent=t;$("dot").classList.toggle("live",!!live);$("mic").classList.toggle("live",!!live);$("mic").textContent=live?"⏹":"🎙"}
-const spacer=$("en").querySelector(".spacer");
+function status(t){$("stx").innerHTML=t}
 function down(el){el.scrollTop=el.scrollHeight}
+function clearEmpty(){const e=$("en").querySelector(".empty"); if(e) e.remove()}
 
-function interim(t){
-  if(!interimEl){interimEl=document.createElement("p");interimEl.className="seg interim";$("en").insertBefore(interimEl,spacer)}
-  interimEl.textContent=t;down($("en"));
+// ---------- English transcript ----------
+function showInterim(t){
+  clearEmpty();
+  if(!interimEl){interimEl=document.createElement("p");interimEl.className="seg interim";$("en").appendChild(interimEl)}
+  interimEl.textContent=t; down($("en"));
 }
-function final(t){
-  t=t.trim(); if(!t) return;
+function addFinal(t){
+  t=t.replace(/\s+/g," ").trim(); if(!t) return;
+  clearEmpty();
   if(interimEl){interimEl.remove();interimEl=null}
   const s={en:t,he:""};
-  s.enEl=document.createElement("p");s.enEl.className="seg";s.enEl.textContent=t;$("en").insertBefore(s.enEl,spacer);
-  s.heEl=document.createElement("p");s.heEl.className="seg";s.heEl.textContent="…";$("he").appendChild(s.heEl);
-  down($("en"));down($("he"));
-  segs.push(s);queue.push(s);pump();
+  s.enEl=document.createElement("p"); s.enEl.className="seg"; s.enEl.textContent=t;
+  $("en").appendChild(s.enEl); down($("en"));
+  segs.push(s);
+  status(`<b>מאזין…</b> ${segs.length} קטעים נשמעו`);
+  scheduleTranslate();
 }
 
+// ---------- Translation: in the background, in batches ----------
 async function translate(text){
   const url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=iw&dt=t&q="+encodeURIComponent(text);
-  const r=await fetch(url); if(!r.ok) throw new Error(r.status);
+  const r=await fetch(url); if(!r.ok) throw new Error("HTTP "+r.status);
   const j=await r.json(); return j[0].map(x=>x[0]).join("");
 }
-async function pump(){
-  if(busy||!queue.length) return; busy=true;
-  const s=queue.shift();
-  try{ s.he=await translate(s.en); s.heEl.textContent=s.he; s.heEl.classList.add("new"); setTimeout(()=>s.heEl.classList.remove("new"),1500); msg("") }
-  catch(e){ s.heEl.textContent="(שגיאת תרגום – בדוק חיבור לאינטרנט)"; }
-  down($("he")); busy=false; pump();
+function scheduleTranslate(){
+  if(!$("auto").checked) return;
+  clearTimeout(trTimer);
+  trTimer=setTimeout(runTranslate, 4000);   // collect a few seconds of speech first
+}
+async function runTranslate(){
+  if(translating || translatedUpTo>=segs.length) return;
+  translating=true;
+  const batch=segs.slice(translatedUpTo);
+  const p=document.createElement("p"); p.className="seg wait"; p.textContent="מתרגם…"; $("he").appendChild(p); down($("he"));
+  try{
+    const he=await translate(batch.map(s=>s.en).join(" "));
+    batch.forEach((s,i)=>s.he = i===batch.length-1 ? he : "");
+    batch[batch.length-1].he=he;
+    p.className="seg"; p.textContent=he;
+    translatedUpTo+=batch.length;
+  }catch(e){
+    p.remove(); msg("התרגום נכשל ("+e.message+"). הטקסט באנגלית נשמר – לחץ 'תרגם עכשיו' כשיש אינטרנט.");
+  }
+  down($("he")); translating=false;
+  if(translatedUpTo<segs.length) scheduleTranslate();
 }
 
-// ---- Live Hebrew preview of words still being spoken ----
-let liveHe=null, liveTimer=null, liveReq=0;
-function livePreview(t){
-  clearTimeout(liveTimer);
-  if(!t.trim()){ if(liveHe){liveHe.remove();liveHe=null} return; }
-  liveTimer=setTimeout(async()=>{
-    const id=++liveReq;
-    try{
-      const he=await translate(t);
-      if(id!==liveReq) return;           // a newer request already won
-      if(!liveHe){liveHe=document.createElement("p");liveHe.className="seg interim";$("he").appendChild(liveHe)}
-      liveHe.textContent=he; down($("he"));
-    }catch(_){}
-  },350);
+// ---------- Speech recognition ----------
+// Uses short sessions (continuous=false) and restarts – the most reliable mode on iPhone.
+function newRec(){
+  const r=new SR();
+  r.lang="en-US"; r.continuous=false; r.interimResults=true; r.maxAlternatives=1;
+  r.onstart=()=>{ status(`<b>מאזין…</b> ${segs.length} קטעים נשמעו`) };
+  r.onspeechstart=()=>{ status(`<b>שומע דיבור…</b>`) };
+  r.onresult=e=>{
+    results++;
+    let fin="", it="";
+    for(let i=0;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) fin+=t+" "; else it+=t+" ";
+    }
+    sessionText=(fin+it).trim();
+    showInterim(sessionText);
+  };
+  r.onerror=e=>{
+    if(e.error==="not-allowed"||e.error==="service-not-allowed"){
+      on=false; uiOff();
+      msg("אין הרשאה למיקרופון או לזיהוי דיבור. באייפון: הגדרות ← Chrome (או Safari) ← מיקרופון ← הפעל. וגם: הגדרות ← כללי ← מקלדת ← 'הפעל הכתבה' חייב להיות דולק.");
+    } else if(e.error==="network"){
+      msg("זיהוי הדיבור דורש חיבור לאינטרנט.");
+    } else if(e.error!=="no-speech" && e.error!=="aborted"){
+      msg("שגיאת מיקרופון: "+e.error);
+    }
+  };
+  r.onend=()=>{
+    if(sessionText){ addFinal(sessionText); sessionText=""; }
+    if(on) setTimeout(()=>{ if(on){ try{rec.start()}catch(_){ rec=newRec(); try{rec.start()}catch(__){} } } },150);
+    else uiOff();
+  };
+  return r;
 }
-function clearLive(){clearTimeout(liveTimer);liveReq++;if(liveHe){liveHe.remove();liveHe=null}}
-
-// ---- Recognition: commit by pause/length ourselves (iOS rarely sends isFinal) ----
-let committed="", lastFull="", pauseTimer=null;
-const words=s=>s.trim().split(/\s+/).filter(Boolean).length;
-function pendingText(full){ return full.startsWith(committed) ? full.slice(committed.length) : full.slice(Math.min(committed.length, full.length)); }
-function commit(){
-  clearTimeout(pauseTimer);
-  const p=pendingText(lastFull);
-  if(p.trim()){ clearLive(); final(p); }
-  committed=lastFull;
-}
-function onFull(full){
-  lastFull=full;
-  const p=pendingText(full);
-  interim(p); livePreview(p);
-  clearTimeout(pauseTimer);
-  // short pause → commit; long run-on speech → commit sooner
-  pauseTimer=setTimeout(commit, words(p)>=14 ? 400 : 1100);
-}
-
+function uiOff(){ $("mic").classList.remove("live"); $("mic").textContent="🎙"; status(`עצור. ${segs.length} קטעים נשמעו.`) }
 function start(){
-  if(!SR){msg("הדפדפן לא תומך בזיהוי דיבור. נסה Safari באייפון או Chrome באנדרואיד.");return}
-  rec=new SR(); rec.lang="en-US"; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
-  committed=""; lastFull="";
-  rec.onresult=e=>{
-    let full="";
-    for(let i=0;i<e.results.length;i++) full+=e.results[i][0].transcript+" ";
-    onFull(full.replace(/\s+/g," "));
-  };
-  rec.onerror=e=>{
-    if(e.error==="not-allowed"||e.error==="service-not-allowed"){on=false;status("מוכן");msg("אין הרשאה למיקרופון. בהגדרות האייפון: Chrome ← מיקרופון ← הפעל.")}
-    else if(e.error!=="no-speech"&&e.error!=="aborted") msg("שגיאת מיקרופון: "+e.error);
-  };
-  // Session ended (silence / iOS limit): flush what was heard, then restart fast
-  rec.onend=()=>{
-    commit(); committed=""; lastFull="";
-    if(on){ setTimeout(()=>{ if(on) try{rec.start()}catch(_){} },50); } else status("מוכן");
-  };
-  on=true; status("מאזין…",true); msg("");
-  try{rec.start()}catch(e){}
+  if(!SR){ msg("הדפדפן הזה לא תומך בזיהוי דיבור. באייפון פתח את הקישור ב-Safari."); return; }
+  msg(""); on=true; sessionText="";
+  $("mic").classList.add("live"); $("mic").textContent="⏹";
+  rec=newRec();
+  try{ rec.start(); status("<b>מתחיל להאזין…</b>"); }catch(e){ msg("לא הצלחתי להפעיל את המיקרופון: "+e.message); on=false; uiOff(); }
 }
-function stop(){on=false;if(rec)try{rec.stop()}catch(e){};status("מוכן")}
+function stop(){ on=false; try{rec&&rec.stop()}catch(e){} uiOff(); if($("auto").checked) runTranslate(); }
 
 $("mic").onclick=()=>on?stop():start();
-$("clr").onclick=()=>{segs.length=0;queue.length=0;$("he").innerHTML="";[...$("en").querySelectorAll(".seg")].forEach(n=>n.remove());interimEl=null};
-$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(segs.map(s=>s.he).join("\n"));$("copy").textContent="✓";setTimeout(()=>$("copy").textContent="העתק",1200)}catch(e){msg("ההעתקה נחסמה")}};
-if(!SR) msg("הדפדפן לא תומך בזיהוי דיבור. פתח ב-Chrome (אנדרואיד) או Safari (אייפון).");
+$("trNow").onclick=()=>{ clearTimeout(trTimer); runTranslate(); };
+$("auto").onchange=()=>{ if($("auto").checked) scheduleTranslate(); };
+$("clr").onclick=()=>{ segs.length=0; translatedUpTo=0; $("he").innerHTML=""; $("en").innerHTML=""; interimEl=null; status("נוקה."); };
+$("copy").onclick=async()=>{
+  const txt="ENGLISH:\n"+segs.map(s=>s.en).join(" ")+"\n\nעברית:\n"+segs.map(s=>s.he).filter(Boolean).join("\n");
+  try{await navigator.clipboard.writeText(txt);$("copy").textContent="✓";setTimeout(()=>$("copy").textContent="העתק",1200)}catch(e){msg("ההעתקה נחסמה")}
+};
+if(!SR) msg("הדפדפן הזה לא תומך בזיהוי דיבור. באייפון פתח את הקישור ב-Safari.");
 </script>
 </body>
 </html>
